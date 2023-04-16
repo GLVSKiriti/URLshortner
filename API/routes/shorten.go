@@ -7,6 +7,7 @@ import (
 
 	"github.com/GLVSKiriti/URLshortner/database"
 	"github.com/GLVSKiriti/URLshortner/helpers"
+	"github.com/asaskevich/govalidator"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -19,11 +20,11 @@ type request struct {
 }
 
 type response struct {
-	URL            string        `json:"url"`
-	CustomShort    string        `json:"short"`
-	Expiry         time.Duration `json:"expiry"`
-	XRateRemaining int           `json:"rate_limit"`
-	XRateLimitRest time.Duration `json:"rate_limit_reset"`
+	URL             string        `json:"url"`
+	CustomShort     string        `json:"short"`
+	Expiry          time.Duration `json:"expiry"`
+	XRateRemaining  int           `json:"rate_limit"`
+	XRateLimitReset time.Duration `json:"rate_limit_reset"`
 }
 
 func ShortenURL(c *fiber.Ctx) error {
@@ -62,7 +63,7 @@ func ShortenURL(c *fiber.Ctx) error {
 	}
 
 	//check if the input sent by user is actual URL or not
-	if !govalidator.IsUrl(body.URL) {
+	if !govalidator.IsURL(body.URL) {
 
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid URL"})
 	}
@@ -103,14 +104,32 @@ func ShortenURL(c *fiber.Ctx) error {
 		body.Expiry = 24
 	}
 
-	err = r.Set(database.Ctx, id, body.URL, body.Expiry*3600*time.Second)
+	err = r.Set(database.Ctx, id, body.URL, body.Expiry*3600*time.Second).Err()
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Unable to connect to server"
+			"error": "Unable to connect to server",
 		})
+	}
+
+	resp := response{
+		URL:             body.URL,
+		CustomShort:     "",
+		Expiry:          body.Expiry,
+		XRateRemaining:  10,
+		XRateLimitReset: 30,
 	}
 
 	//This line at last decrements the ratelimit by 1
 	r2.Decr(database.Ctx, c.IP())
+
+	val, _ = r2.Get(database.Ctx, c.IP()).Result()
+	resp.XRateRemaining, _ = strconv.Atoi(val)
+
+	ttl, _ := r2.TTL(database.Ctx, c.IP()).Result()
+	resp.XRateLimitReset = ttl / time.Nanosecond / time.Minute
+
+	resp.CustomShort = os.Getenv("DOMAIN") + "/" + id
+
+	return c.Status(fiber.StatusOK).JSON(resp)
 }

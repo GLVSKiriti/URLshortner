@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/GLVSKiriti/URLshortner/routes"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/joho/godotenv"
@@ -29,6 +30,6 @@ func main() {
 
 	setUpRoutes(app)
 
-	log.Fatal(app, Listen(os.Getenv("APP_PORT")))
+	log.Fatal(app.Listen(os.Getenv("APP_PORT")))
 
 }
